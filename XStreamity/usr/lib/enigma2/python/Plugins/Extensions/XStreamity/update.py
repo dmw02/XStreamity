@@ -5,7 +5,7 @@
 from .plugin import playlists_json, pythonVer, cfg, hdr
 from xml.etree.cElementTree import iterparse
 from twisted.web.client import downloadPage
-from requests.adapters import HTTPAdapter
+from requests.adapters import HTTPAdapter, Retry
 try:
     from urlparse import urlparse
 except:
@@ -18,6 +18,13 @@ import requests
 import time
 import twisted.python.runtime
 
+try:
+    from http.client import HTTPConnection
+    HTTPConnection.debuglevel = 0
+except:
+    from httplib import HTTPConnection
+    HTTPConnection.debuglevel = 0
+requests.packages.urllib3.disable_warnings()
 
 # https twisted client hack #
 try:
@@ -75,13 +82,16 @@ class XStreamity_Update:
     def checkRedirect(self, url):
         # print("*** check redirect ***")
         x = ""
-        adapter = HTTPAdapter()
+        retries = Retry(total=3, backoff_factor=1)
+        adapter = HTTPAdapter(max_retries=retries)
         http = requests.Session()
         http.mount("http://", adapter)
         http.mount("https://", adapter)
         try:
-            x = http.get(url, header=hdr, timeout=10, verify=False, stream=True)
-            return str(x.url)
+            x = http.get(url, headers=hdr, timeout=30, verify=False, stream=True)
+            url = x.url
+            x.close()
+            return str(url)
         except Exception as e:
             print(e)
             return str(url)
@@ -103,11 +113,13 @@ class XStreamity_Update:
                 name = playlist["playlist_info"]["name"]
                 xmltv = playlist["playlist_info"]["xmltv_api"]
                 epglocation = str(cfg.epglocation.value)
-                if not epglocation.endswith("/"):
-                    epglocation = epglocation + str("/")
-                epgfolder = epglocation + str(name)
-                epgxmlfile = str(epgfolder) + "/" + str("epg.xml")
-                epgjsonfile = str(epgfolder) + "/" + str("epg.json")
+                epgfolder = os.path.join(epglocation, str(name))
+                epgxmlfile = os.path.join(epgfolder, "epg.xml")
+                epgjsonfile = os.path.join(epgfolder, "epg.json")
+
+                exists = any(str(name) == str(x[0]) for x in self.urllist)
+                if exists:
+                    continue
                 self.urllist.append([domain, xmltv, epgxmlfile, epgjsonfile])
 
                 if not os.path.exists(epgfolder):
@@ -131,6 +143,7 @@ class XStreamity_Update:
         epgxmlfile = self.urllist[0][2]
 
         url = self.checkRedirect(url)
+        time.sleep(1)
 
         try:
             parsed = urlparse(url)

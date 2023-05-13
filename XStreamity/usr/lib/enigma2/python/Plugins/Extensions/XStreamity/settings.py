@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from . import _
-from .plugin import skin_path, cfg
+from .plugin import skin_directory, cfg
 from .xStaticText import StaticText
 
 from Components.ActionMap import ActionMap
@@ -48,10 +48,10 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
 
         self.session = session
 
-        skin = skin_path + "settings.xml"
-
+        skin_path = os.path.join(skin_directory, cfg.skin.getValue())
+        skin = os.path.join(skin_path, "settings.xml")
         if os.path.exists("/var/lib/dpkg/status"):
-            skin = skin_path + "DreamOS/settings.xml"
+            skin = os.path.join(skin_path, "DreamOS/settings.xml")
 
         with open(skin, "r") as f:
             self.skin = f.read()
@@ -117,7 +117,7 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
                 cfg.save()
                 configfile.save()
 
-                if self.org_skin != cfg.skin.getValue() or self.org_main != cfg.main.getValue() or self.org_wakeup != cfg.wakeup.getValue() or self.org_boot != cfg.boot.getValue():
+                if self.org_main != cfg.main.getValue() or self.org_wakeup != cfg.wakeup.getValue() or self.org_boot != cfg.boot.getValue() or self.location != cfg.location.getValue():
                     self.changedFinished()
             self.clear_caches()
             self.close()
@@ -134,8 +134,8 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
 
     def initConfig(self):
         # print("*** init config ***")
-        self.cfg_skin = getConfigListEntry(_("Select skin *Restart GUI Required"), cfg.skin)
-        self.cfg_location = getConfigListEntry(_("playlists.txt location"), cfg.location)
+        self.cfg_skin = getConfigListEntry(_("Select skin"), cfg.skin)
+        self.cfg_location = getConfigListEntry(_("playlists.txt location") + _(" *Restart GUI Required"), cfg.location)
         self.cfg_epglocation = getConfigListEntry(_("EPG download location"), cfg.epglocation)
         self.cfg_downloadlocation = getConfigListEntry(_("VOD download folder"), cfg.downloadlocation)
         # self.cfg_timeout = getConfigListEntry(_("Server timeout (seconds)"), cfg.timeout)
@@ -147,7 +147,7 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
         self.cfg_stopstream = getConfigListEntry(_("Stop stream on back button"), cfg.stopstream)
         self.cfg_adult = getConfigListEntry(_("XStreamity parental control"), cfg.adult)
         self.cfg_adultpin = getConfigListEntry(_("XStreamity parental pin"), cfg.adultpin)
-        self.cfg_main = getConfigListEntry(_("Show in main menu *Restart GUI Required"), cfg.main)
+        self.cfg_main = getConfigListEntry(_("Show in main menu") + _(" *Restart GUI Required"), cfg.main)
 
         self.cfg_TMDB = getConfigListEntry(_("Use Movie Database(TMDB) for VOD & Series"), cfg.TMDB)
         self.cfg_TMDBLanguage = getConfigListEntry(_("Movie Database language"), cfg.TMDBLanguage)
@@ -159,19 +159,21 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
 
         self.cfg_skipplaylistsscreen = getConfigListEntry(_("Skip playlist selection screen if only 1 playlist"), cfg.skipplaylistsscreen)
 
-        self.cfg_wakeup = getConfigListEntry(_("Automatic EPG download time *Restart GUI Required"), cfg.wakeup)
+        self.cfg_wakeup = getConfigListEntry(_("Automatic EPG download time") + (" *Restart GUI Required"), cfg.wakeup)
 
         self.cfg_channelpicons = getConfigListEntry(_("Show channel picons"), cfg.channelpicons)
         self.cfg_channelcovers = getConfigListEntry(_("Show Vod/Series posters"), cfg.channelcovers)
         self.cfg_infobarpicons = getConfigListEntry(_("Show infobar picons"), cfg.infobarpicons)
         self.cfg_infobarcovers = getConfigListEntry(_("Show infobar posters"), cfg.infobarcovers)
 
-        self.cfg_boot = getConfigListEntry(_("Auto start XStreamity on boot *Restart GUI Required"), cfg.boot)
+        self.cfg_boot = getConfigListEntry(_("Auto start XStreamity on boot") + (" *Restart GUI Required"), cfg.boot)
 
-        self.org_skin = cfg.skin.getValue()
         self.org_main = cfg.main.getValue()
         self.org_wakeup = cfg.wakeup.getValue()
         self.org_boot = cfg.boot.getValue()
+        self.location = cfg.location.getValue()
+        self.epg_location = cfg.epglocation.getValue()
+        self.downloadlocation = cfg.downloadlocation.getValue()
 
         self.createSetup()
 
@@ -282,7 +284,6 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
             self.openDirectoryBrowser(cfg.epglocation.value, "epglocation")
         else:
             pass
-        ConfigListScreen.keyOK(self)
 
     def openDirectoryBrowser(self, path, cfgitem):
 
@@ -296,11 +297,13 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
                     LocationBox,
                     windowTitle=_("Choose Directory:"),
                     text=_("Choose directory"),
-                    currDir=path,
-                    bookmarks=config.movielist.videodirs)
+                    currDir=str(path),
+                    bookmarks=config.movielist.videodirs,
+                    autoAdd=True,
+                    editDir=True,
+                    inhibitDirs=["/bin", "/boot", "/dev", "/home", "/lib", "/proc", "/run", "/sbin", "/sys", "/usr", "/var"])
             except Exception as e:
                 print(e)
-            ConfigListScreen.keyOK(self)
 
         elif cfgitem == "downloadlocation":
             try:
@@ -309,11 +312,13 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
                     LocationBox,
                     windowTitle=_("Choose Directory:"),
                     text=_("Choose directory"),
-                    currDir=path,
-                    bookmarks=config.movielist.videodirs)
+                    currDir=str(path),
+                    bookmarks=config.movielist.videodirs,
+                    autoAdd=True,
+                    editDir=True,
+                    inhibitDirs=["/bin", "/boot", "/dev", "/home", "/lib", "/proc", "/run", "/sbin", "/sys", "/usr", "/var"])
             except Exception as e:
                 print(e)
-            ConfigListScreen.keyOK(self)
 
         elif cfgitem == "epglocation":
             try:
@@ -322,11 +327,13 @@ class XStreamity_Settings(ConfigListScreen, Screen, ProtectedScreen):
                     LocationBox,
                     windowTitle=_("Choose Directory:"),
                     text=_("Choose directory"),
-                    currDir=path,
-                    bookmarks=config.movielist.videodirs)
+                    currDir=str(path),
+                    bookmarks=config.movielist.videodirs,
+                    autoAdd=True,
+                    editDir=True,
+                    inhibitDirs=["/bin", "/boot", "/dev", "/home", "/lib", "/proc", "/run", "/sbin", "/sys", "/usr", "/var"])
             except Exception as e:
                 print(e)
-            ConfigListScreen.keyOK(self)
 
     def openDirectoryBrowserCB(self, path):
         if path is not None:

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from . import _
-from .plugin import skin_path, playlist_file, hdr
+from .plugin import skin_directory, playlist_file, hdr, cfg
 from .xStaticText import StaticText
 
 from Components.ActionMap import ActionMap
@@ -10,10 +10,20 @@ from Components.ConfigList import ConfigListScreen
 from Components.config import getConfigListEntry, NoSave, ConfigText, ConfigSelection, ConfigNumber, ConfigYesNo, ConfigEnableDisable
 from Components.Pixmap import Pixmap
 from Screens.MessageBox import MessageBox
+from requests.adapters import HTTPAdapter, Retry
 from Screens.Screen import Screen
 
 import os
 import shutil
+import requests
+
+try:
+    from http.client import HTTPConnection
+    HTTPConnection.debuglevel = 0
+except:
+    from httplib import HTTPConnection
+    HTTPConnection.debuglevel = 0
+requests.packages.urllib3.disable_warnings()
 
 
 class XStreamity_AddServer(ConfigListScreen, Screen):
@@ -21,10 +31,11 @@ class XStreamity_AddServer(ConfigListScreen, Screen):
         Screen.__init__(self, session)
         self.session = session
 
-        skin = skin_path + "settings.xml"
+        skin_path = os.path.join(skin_directory, cfg.skin.getValue())
+        skin = os.path.join(skin_path, "settings.xml")
 
         if os.path.exists("/var/lib/dpkg/status"):
-            skin = skin_path + "DreamOS/settings.xml"
+            skin = os.path.join(skin_path, "DreamOS/settings.xml")
 
         with open(skin, "r") as f:
             self.skin = f.read()
@@ -45,11 +56,6 @@ class XStreamity_AddServer(ConfigListScreen, Screen):
         self["HelpWindow"].hide()
 
         self.protocol = "http://"
-        self.server = "domain.xyz"
-        self.port = 80
-        self.username = "username"
-        self.password = "password"
-        self.listType = "m3u"
         self.output = "ts"
 
         self["actions"] = ActionMap(["XStreamityActions"], {
@@ -86,10 +92,10 @@ class XStreamity_AddServer(ConfigListScreen, Screen):
     def initConfig(self):
         self.nameCfg = NoSave(ConfigText(default="IPTV", fixed_size=False))
         self.protocolCfg = NoSave(ConfigSelection(default=self.protocol, choices=[("http://", "http://"), ("https://", "https://")]))
-        self.serverCfg = NoSave(ConfigText(default=self.server, fixed_size=False))
-        self.portCfg = NoSave(ConfigNumber(default=self.port))
-        self.usernameCfg = NoSave(ConfigText(default=self.username, fixed_size=False))
-        self.passwordCfg = NoSave(ConfigText(default=self.password, fixed_size=False))
+        self.serverCfg = NoSave(ConfigText(fixed_size=False))
+        self.portCfg = NoSave(ConfigText(fixed_size=False))
+        self.usernameCfg = NoSave(ConfigText(fixed_size=False))
+        self.passwordCfg = NoSave(ConfigText(fixed_size=False))
         self.outputCfg = NoSave(ConfigSelection(default=self.output, choices=[("ts", "ts"), ("m3u8", "m3u8")]))
         self.createSetup()
 
@@ -98,7 +104,7 @@ class XStreamity_AddServer(ConfigListScreen, Screen):
 
         self.list.append(getConfigListEntry(_("Short name or provider name:"), self.nameCfg))
         self.list.append(getConfigListEntry(_("Protocol:"), self.protocolCfg))
-        self.list.append(getConfigListEntry(_("Server URL:"), self.serverCfg))
+        self.list.append(getConfigListEntry(_("Server URL: i.e. domain.xyz"), self.serverCfg))
         self.list.append(getConfigListEntry(_("Port:"), self.portCfg))
         self.list.append(getConfigListEntry(_("Username:"), self.usernameCfg))
         self.list.append(getConfigListEntry(_("Password:"), self.passwordCfg))
@@ -158,13 +164,19 @@ class XStreamity_AddServer(ConfigListScreen, Screen):
             protocol = self.protocolCfg.value
             domain = self.serverCfg.value.strip().lower()
             port = self.portCfg.value
+
+            if port:
+                host = "%s%s:%s" % (protocol, domain, port)
+            else:
+                host = "%s%s" % (protocol, domain)
+
             username = self.usernameCfg.value.strip()
             password = self.passwordCfg.value.strip()
             listtype = "m3u"
             output = self.outputCfg.value
 
-            playlistline = "%s%s:%s/get.php?username=%s&password=%s&type=%s&output=%s #%s" % (protocol, domain, port, username, password, listtype, output, self.name)
-            self.apiline = "%s%s:%s/player_api.php?username=%s&password=%s" % (protocol, domain, port, username, password)
+            playlistline = "%s/get.php?username=%s&password=%s&type=%s&output=%s #%s" % (host, username, password, listtype, output, self.name)
+            self.apiline = "%s/player_api.php?username=%s&password=%s" % (host, username, password)
 
             valid = self.checkline()
 
@@ -177,16 +189,17 @@ class XStreamity_AddServer(ConfigListScreen, Screen):
                 with open(playlist_file, "w+") as f:
                     f.close()
 
+            """
             with open(playlist_file, "r") as f:
                 lines = f.readlines()
                 exists = False
                 for line in lines:
                     if domain in line and username in line and password in line:
                         exists = True
+                        """
 
-            if exists is False:
-                with open(playlist_file, "a") as f:
-                    f.write("\n" + str(playlistline) + "\n")
+            with open(playlist_file, "a") as f:
+                f.write("\n" + str(playlistline) + "\n")
 
             try:
                 shutil.copyfile(playlist_file, '/home/playlists.txt')
@@ -207,26 +220,28 @@ class XStreamity_AddServer(ConfigListScreen, Screen):
             pass
 
     def checkline(self):
-        import requests
-        from requests.adapters import HTTPAdapter
-
         valid = False
 
         r = ""
-        adapter = HTTPAdapter()
+        retries = Retry(total=3, backoff_factor=1)
+        adapter = HTTPAdapter(max_retries=retries)
         http = requests.Session()
         http.mount("http://", adapter)
         http.mount("https://", adapter)
-
+        response = ""
         try:
             r = http.get(self.apiline, headers=hdr, timeout=15, verify=False, stream=True)
             r.raise_for_status()
             if r.status_code == requests.codes.ok:
-                response = r.json()
-                if "user_info" in response:
-                    if "auth" in response["user_info"]:
-                        if response["user_info"]["auth"] == 1:
-                            valid = True
+                try:
+                    response = r.json()
+                    if "user_info" in response:
+                        if "auth" in response["user_info"]:
+                            if response["user_info"]["auth"] == 1:
+                                valid = True
+                    r.close()
+                except Exception as e:
+                    print(e)
 
         except Exception as e:
             print(("Error Connecting: %s" % e))

@@ -3,7 +3,7 @@
 
 from . import _
 from . import xstreamity_globals as glob
-from .plugin import skin_path, playlist_file, playlists_json
+from .plugin import skin_directory, playlist_file, playlists_json, cfg
 from .xStaticText import StaticText
 
 from Components.ActionMap import ActionMap
@@ -30,10 +30,11 @@ class XStreamity_Settings(ConfigListScreen, Screen):
 
         self.session = session
 
-        skin = skin_path + "settings.xml"
+        skin_path = os.path.join(skin_directory, cfg.skin.getValue())
+        skin = os.path.join(skin_path, "settings.xml")
 
         if os.path.exists("/var/lib/dpkg/status"):
-            skin = skin_path + "DreamOS/settings.xml"
+            skin = os.path.join(skin_path, "DreamOS/settings.xml")
 
         with open(skin, "r") as f:
             self.skin = f.read()
@@ -217,7 +218,10 @@ class XStreamity_Settings(ConfigListScreen, Screen):
         self.username = glob.current_playlist["playlist_info"]["username"]
         self.password = glob.current_playlist["playlist_info"]["password"]
         self.listtype = "m3u"
-        self.host = "%s%s:%s" % (self.protocol, self.domain, self.port)
+        if self.port:
+            self.host = "%s%s:%s" % (self.protocol, self.domain, self.port)
+        else:
+            self.host = "%s%s" % (self.protocol, self.domain)
 
         if self["config"].isChanged():
             self.name = self.nameCfg.value.strip()
@@ -233,7 +237,7 @@ class XStreamity_Settings(ConfigListScreen, Screen):
                 livetype = "4097"
 
             vodtype = self.vodTypeCfg.value
-            epgoffset = self.epgoffsetCfg.value
+            epgoffset = int(self.epgoffsetCfg.value)
 
             epgalternative = self.epgalternativeCfg.value
             epgalternativeurl = self.epgalternativeurlCfg.value
@@ -252,9 +256,10 @@ class XStreamity_Settings(ConfigListScreen, Screen):
             glob.current_playlist["player_info"]["epgalternative"] = epgalternative
             glob.current_playlist["player_info"]["epgalternativeurl"] = epgalternativeurl
             glob.current_playlist["player_info"]["directsource"] = directsource
-            playlistline = "%s%s:%s/get.php?username=%s&password=%s&type=%s&output=%s&timeshift=%s #%s" % (self.protocol, self.domain, self.port, self.username, self.password, self.listtype, output, epgoffset, self.name)
 
+            playlistline = "%s/get.php?username=%s&password=%s&type=%s&output=%s&timeshift=%s #%s" % (self.host, self.username, self.password, self.listtype, output, epgoffset, self.name)
             self.full_url = "%s/get.php?username=%s&password=%s&type=%s&output=%s" % (self.host, self.username, self.password, self.listtype, self.output)
+
             glob.current_playlist["playlist_info"]["full_url"] = self.full_url
             if epgalternativeurl:
                 glob.current_playlist["player_info"]["xmltv_api"] = epgalternativeurl
@@ -274,10 +279,13 @@ class XStreamity_Settings(ConfigListScreen, Screen):
                         parsed_uri = urlparse(line)
                         protocol = parsed_uri.scheme + "://"
                         domain = parsed_uri.hostname
-                        port = 80
+                        port = ""
 
                         if parsed_uri.port:
                             port = parsed_uri.port
+                            host = "%s%s:%s" % (protocol, domain, port)
+                        else:
+                            host = "%s%s" % (protocol, domain)
 
                         query = parse_qs(parsed_uri.query, keep_blank_values=True)
 
@@ -294,9 +302,9 @@ class XStreamity_Settings(ConfigListScreen, Screen):
                             hastimeshift = True
 
                         if hastimeshift or int(epgoffset) != 0:
-                            playlistline = "%s%s:%s/get.php?username=%s&password=%s&type=%s&output=%s&timeshift=%s #%s" % (protocol, domain, port, username, password, self.listtype, output, epgoffset, self.name)
+                            playlistline = "%s/get.php?username=%s&password=%s&type=%s&output=%s&timeshift=%s #%s" % (host, username, password, self.listtype, output, epgoffset, self.name)
                         else:
-                            playlistline = "%s%s:%s/get.php?username=%s&password=%s&type=%s&output=%s #%s" % (protocol, domain, port, username, password, self.listtype, output, self.name)
+                            playlistline = "%s/get.php?username=%s&password=%s&type=%s&output=%s #%s" % (host, username, password, self.listtype, output, self.name)
 
                         line = str(playlistline) + "\n"
                         exists = True

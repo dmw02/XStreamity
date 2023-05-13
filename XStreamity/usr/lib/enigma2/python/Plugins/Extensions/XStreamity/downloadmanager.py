@@ -8,7 +8,7 @@
 # https://forums.openpli.org/topic/52171-cancel-a-single-job-in-jobmanager-taskpy/
 
 from . import _
-from .plugin import skin_path, downloads_json, cfg, pythonVer, hdr
+from .plugin import skin_directory, downloads_json, cfg, pythonVer, hdr
 from .xStaticText import StaticText
 from .Task import job_manager as JobManager
 from .Task import Task, Job
@@ -18,7 +18,7 @@ from Components.Sources.List import List
 from Screens.MessageBox import MessageBox
 from Screens.Screen import Screen
 from enigma import eTimer, eServiceReference
-from requests.adapters import HTTPAdapter
+from requests.adapters import HTTPAdapter, Retry
 
 try:
     from urlparse import urlparse
@@ -32,6 +32,14 @@ import re
 import requests
 import subprocess
 import time
+
+try:
+    from http.client import HTTPConnection
+    HTTPConnection.debuglevel = 0
+except:
+    from httplib import HTTPConnection
+    HTTPConnection.debuglevel = 0
+requests.packages.urllib3.disable_warnings()
 
 ui = False
 
@@ -136,7 +144,9 @@ class XStreamity_DownloadManager(Screen):
         Screen.__init__(self, session)
 
         self.session = session
-        skin = skin_path + "downloadmanager.xml"
+
+        skin_path = os.path.join(skin_directory, cfg.skin.getValue())
+        skin = os.path.join(skin_path, "downloadmanager.xml")
 
         with open(skin, "r") as f:
             self.skin = f.read()
@@ -219,18 +229,27 @@ class XStreamity_DownloadManager(Screen):
         for video in self.downloads_all:
             if video[5] == 0:
                 url = video[2]
-                adapter = HTTPAdapter()
+                retries = Retry(total=3, backoff_factor=1)
+                adapter = HTTPAdapter(max_retries=retries)
                 http = requests.Session()
                 http.mount("http://", adapter)
                 http.mount("https://", adapter)
 
                 try:
                     r = http.get(url, headers=hdr, timeout=10, verify=False, stream=True)
-                    video[5] = float(r.headers["content-length"])
-                    r.close()
+                    r.raise_for_status()
+                    if r.status_code == requests.codes.ok:
+                        try:
+                            video[5] = float(r.headers["content-length"])
+                            r.close()
+                        except Exception as e:
+                            print(e)
+                            video[5] = 0
+
                 except Exception as e:
                     print(e)
                     video[5] = 0
+
                 x += 1
                 if x == 5:
                     x = 0
@@ -248,14 +267,18 @@ class XStreamity_DownloadManager(Screen):
                 print(e)
                 extension = ""
 
-            filename = str(filmtitle) + str(extension)
-            path = str(cfg.downloadlocation.getValue()) + str(filename)
+            filename = os.path.join(filmtitle, extension)
+            path = os.path.join(cfg.downloadlocation.getValue(), filename)
             totalbytes = video[5]
 
             if os.path.exists(path):
                 recbytes = os.path.getsize(path)
                 if int(totalbytes) != int(recbytes):
-                    video[4] = int((recbytes / totalbytes) * 100) - 2
+                    try:
+                        video[4] = int((recbytes / totalbytes) * 100) - 2
+                    except:
+                        video[4] = 0
+
                     if video[4] < 0:
                         video[4] = 0
                     templist.append(video)
@@ -292,9 +315,9 @@ class XStreamity_DownloadManager(Screen):
                 print(e)
                 extension = ""
 
-            filename = str(filmtitle) + str(extension)
+            filename = os.path.join(filmtitle, extension)
             shortpath = str(cfg.downloadlocation.getValue())
-            path = str(cfg.downloadlocation.getValue()) + str(filename)
+            path = os.path.join(cfg.downloadlocation.getValue(), filename)
             url = str(video[2])
             state = str(video[3])
 
@@ -396,7 +419,7 @@ class XStreamity_DownloadManager(Screen):
 
             filename = str(self.filmtitle) + str(self.extension)
             self.shortpath = str(cfg.downloadlocation.getValue())
-            self.path = str(cfg.downloadlocation.getValue()) + str(filename)
+            self.path = os.path.join(cfg.downloadlocation.getValue(), filename)
 
             parsed_uri = urlparse(self.url)
             video_domain = parsed_uri.hostname

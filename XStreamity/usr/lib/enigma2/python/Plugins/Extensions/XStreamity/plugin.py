@@ -7,6 +7,9 @@ from Components.config import config, ConfigSubsection, ConfigSelection, ConfigD
 from enigma import eTimer, getDesktop, addFont
 from Plugins.Plugin import PluginDescriptor
 
+import os
+import shutil
+import sys
 import twisted.python.runtime
 
 try:
@@ -24,10 +27,6 @@ try:
 except:
     hasConcurrent = False
 
-import os
-import shutil
-import sys
-
 pythonFull = float(str(sys.version_info.major) + "." + str(sys.version_info.minor))
 pythonVer = sys.version_info.major
 
@@ -44,10 +43,12 @@ dir_etc = "/etc/enigma2/xstreamity/"
 dir_tmp = "/tmp/xstreamity/"
 dir_plugins = "/usr/lib/enigma2/python/Plugins/Extensions/XStreamity/"
 
-if screenwidth.width() > 1280:
-    skin_directory = "%sskin/fhd/" % (dir_plugins)
+if screenwidth.width() == 2560:
+    skin_directory = os.path.join(dir_plugins, "skin/uhd/")
+elif screenwidth.width() > 1280:
+    skin_directory = os.path.join(dir_plugins, "skin/fhd/")
 else:
-    skin_directory = "%sskin/hd/" % (dir_plugins)
+    skin_directory = os.path.join(dir_plugins, "skin/hd/")
 
 
 folders = os.listdir(skin_directory)
@@ -81,8 +82,8 @@ languages = [
     ("el", "ελληνικά"),
     ("sq", "shqip")
 ]
-config.plugins.XStreamity = ConfigSubsection()
 
+config.plugins.XStreamity = ConfigSubsection()
 cfg = config.plugins.XStreamity
 
 
@@ -111,7 +112,7 @@ cfg.livepreview = ConfigYesNo(default=False)
 cfg.stopstream = ConfigYesNo(default=False)
 cfg.skin = ConfigSelection(default="default", choices=folders)
 cfg.parental = ConfigYesNo(default=False)
-cfg.timeout = ConfigSelectionNumber(1, 30, 1, default=20, wraparound=True)
+cfg.timeout = ConfigSelectionNumber(1, 20, 1, default=20, wraparound=True)
 cfg.TMDB = ConfigYesNo(default=True)
 cfg.TMDBLanguage = ConfigSelection(default="en", choices=languages)
 cfg.catchupstart = ConfigSelectionNumber(0, 30, 1, default=0, wraparound=True)
@@ -125,6 +126,7 @@ cfg.retries = ConfigSubsection()
 cfg.retries.adultpin = ConfigSubsection()
 cfg.retries.adultpin.tries = ConfigInteger(default=3)
 cfg.retries.adultpin.time = ConfigInteger(default=3)
+cfg.locationvalid = ConfigYesNo(default=True)
 
 cfg.channelpicons = ConfigYesNo(default=True)
 cfg.infobarpicons = ConfigYesNo(default=True)
@@ -133,30 +135,34 @@ cfg.infobarcovers = ConfigYesNo(default=True)
 
 cfg.boot = ConfigYesNo(default=False)
 
-skin_path = "%s%s/" % (skin_directory, cfg.skin.value)
-common_path = "%scommon/" % (skin_directory)
-playlists_json = "%sx-playlists.json" % (dir_etc)
-downloads_json = "%sdownloads2.json" % (dir_etc)
-playlist_file = "%splaylists.txt" % (dir_etc)
+skin_path = os.path.join(skin_directory, cfg.skin.value)
+common_path = os.path.join(skin_directory, "common/")
+playlists_json = os.path.join(dir_etc, "x-playlists.json")
+downloads_json = os.path.join(dir_etc, "downloads2.json")
+playlist_file = os.path.join(dir_etc, "playlists.txt")
 
-if cfg.location.value:
-    playlist_file = "%s/playlists.txt" % (cfg.location.value)
+location = cfg.location.getValue()
+if location:
+    if os.path.exists(location):
+        playlist_file = os.path.join(cfg.location.value, "playlists.txt")
+        cfg.locationvalid.setValue(True)
+        cfg.save()
+    else:
+        cfg.location.setValue(dir_etc)
+        cfg.locationvalid.setValue(False)
+        cfg.save()
 
-font_folder = "%sfonts/" % (dir_plugins)
-
+font_folder = os.path.join(dir_plugins, "fonts/")
 
 """
 hdr = {
-"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:87.0) Gecko/20100101 Firefox/87.0",
-"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-"Accept-Language": "en-GB,en;q=0.5",
-"Accept-Encoding": "gzip, deflate",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Encoding": "gzip, deflate",
 }
 """
 
-
 hdr = {"User-Agent": "Enigma2 - XStreamity Plugin"}
-
 
 # create folder for working files
 if not os.path.exists(dir_etc):
@@ -171,7 +177,6 @@ if not os.path.exists(dir_tmp):
     os.makedirs(dir_tmp)
 
 # check if playlists.txt file exists in specified location
-
 if not os.path.isfile(playlist_file):
     open(playlist_file, "a").close()
 
@@ -195,18 +200,20 @@ if not os.path.isfile(playlists_json):
 if not os.path.isfile(downloads_json):
     open(downloads_json, "a").close()
 
-if os.path.isdir('/usr/lib/enigma2/python/Plugins/Extensions/XStreamityPro/'):
+
+# remove dodgy versions of my plugin
+if os.path.isdir("/usr/lib/enigma2/python/Plugins/Extensions/XStreamityPro/"):
     try:
-        shutil.rmtree('/usr/lib/enigma2/python/Plugins/Extensions/XStreamityPro/')
-    except:
-        pass
+        shutil.rmtree("/usr/lib/enigma2/python/Plugins/Extensions/XStreamityPro/")
+    except Exception as e:
+        print(e)
 
 # try and override epgimport settings
 try:
     config.plugins.epgimport.import_onlybouquet.value = False
     config.plugins.epgimport.import_onlybouquet.save()
-except:
-    pass
+except Exception as e:
+    print(e)
 
 
 def main(session, **kwargs):
@@ -329,10 +336,10 @@ def bootstart(reason, **kwargs):
 
 
 def Plugins(**kwargs):
-    addFont(font_folder + "m-plus-rounded-1c-regular.ttf", "xstreamityregular", 100, 0)
-    addFont(font_folder + "m-plus-rounded-1c-medium.ttf", "xstreamitybold", 100, 0)
-    addFont(font_folder + "slyk-medium.ttf", "slykregular", 100, 0)
-    addFont(font_folder + "slyk-bold.ttf", "slykbold", 100, 0)
+    addFont(os.path.join(font_folder, "m-plus-rounded-1c-regular.ttf"), "xstreamityregular", 100, 0)
+    addFont(os.path.join(font_folder, "m-plus-rounded-1c-medium.ttf"), "xstreamitybold", 100, 0)
+    addFont(os.path.join(font_folder, "slyk-medium.ttf"), "slykregular", 100, 0)
+    addFont(os.path.join(font_folder, "slyk-bold.ttf"), "slykbold", 100, 0)
 
     iconFile = "icons/plugin-icon_sd.png"
     if screenwidth.width() > 1280:
